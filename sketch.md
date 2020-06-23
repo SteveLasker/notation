@@ -2,7 +2,7 @@
 
 To enable various SMEs, project owners and customers the ability to provide feedback for the [Notary v2 e2e scenarios][nv2-scenarios], we provide the following sketch for what we intend to build.
 
-Based on this sketch, various prototypes will be built and iterated upon, instanced in an [experimental environment](.experimental-environment.md).
+Based on this sketch, various prototypes will be built and iterated upon, instanced in an [experimental environment](experimental-environment.md).
 
 ## e2e Top View
 
