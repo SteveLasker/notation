@@ -147,30 +147,37 @@ echo '{"version": "0.0.0.0", "image": "registry.wabbit-networks.io/net-monitor:v
 ## Push the SBoM with ORAS
 
 ```bash
-  oras push registry.wabbit-networks.io/net-monitor \
-      --push-as-digest \
-      --artifact-type application/example.sbom.v0 \
-      --manifest-type application/vnd.oci.artifact.manifest.v1 \
-      --manifests registry.wabbit-networks.io/net-monitor@<net-monitor@sha252:digest> \
-      --plain-http \
-      ./sbom_v1.json
+oras push registry.wabbit-networks.io/net-monitor \
+    --artifact-type application/example.sbom.v0 \
+    --artifact-reference registry.wabbit-networks.io/net-monitor@<net-monitor@sha256:digest> \
+    --export-manifest sbom_v1-manifest.json \
+    --plain-http \
+    ./sbom_v1.json
+
+# view the manifest
+cat sbom_v1-manifest.json
 ```
 
 ### Push the SBoM with Signing
 
-- For non-container images, we'll use the `nv2` cli to sign and push to a registry.
+- For non-container images, we'll use the `nv2` cli to sign and  the `oras` cli to push to a registry.
   ```bash
-  nv2 sign \
-    --manifests oci://registry.wabbit-networks.io/net-monitor@sha256:1a0a0a89a \
-    --push \
-    -k ~/.ssh/wabbit-networks.key \
-    -o net-monitor_v1-sbom.signature.jwt
-
-  # view the manifest
-  cat sbom_v1-manifest.json
-
+  # Sign the manifest
+  nv2 sign -m x509 \
+      -k ~/.ssh/wabbit-networks.key \
+      -o net-monitor_v1-sbom.signature.jwt \
+      file:sbom_v1-manifest.json
+  
   # view the sbom signature
-  cat <output from oras notary sign>
+  cat net-monitor_v1-sbom.signature.jwt
+
+  # Push the signature
+  NET_MONITOR_SBOM_DIGEST=$(sha256sum sbom_v1-manifest.json | cut -d' ' -f1)
+  oras push registry.wabbit-networks.io/net-monitor \
+      --artifact-type application/vnd.cncf.notary.v2 \
+      --artifact-reference registry.wabbit-networks.io/net-monitor@sha256:${NET_MONITOR_SBOM_DIGEST} \
+      --plain-http \
+      net-monitor_v1-sbom.signature.jwt:application/vnd.cncf.notary.signature.v2+jwt
   ```
 
 ## Pulling Validated Content
@@ -193,25 +200,26 @@ rm *.json
 
 Simulate a notary enabled client, which doesn't yet have the public keys configured.
 
-- Get the digest for the `net-monitor:v1` image:
+- Get the digest for the `net-monitor:v1` image and query for Notary v2 linked artifacts
   ```bash
-  oras discover ... (shiwei magic)
-
-  NET_MONITOR_DIGEST=$(curl -v -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
-      registry.wabbit-networks.io/v2/net-monitor/manifests/v1 2>&1 | \
-      grep -i 'Docker-Content-Digest:' | \
-      awk '{print $3}')
-  ```
-- Query for Notary v2 linked artifacts
-  ```bash
-  curl -v -H "Accept: artifactType=application/vnd.cncf.notary.v2" \
-    registry.wabbit-networks.io/v2/_ext/oci-artifacts/v1/net-monitor/manifests/${NET_MONITOR_DIGEST}/links
-  NET_MONITOR_SIG_DIGEST=^
+  oras discover --artifact-type application/vnd.cncf.notary.v2 \
+      --plain-http \
+      registry.wabbit-networks.io/net-monitor:v1
+  
+  NET_MONITOR_DIGEST=<output digest of oras discover>
+  NET_MONITOR_SIG_DIGEST=<output reference of oras discover>
   ```
 - Retrieve the `net-monitor:v1` notary v2 signature
   ```bash
-  oras pull registry.wabbit-networks.io/net-monitor@sha256:${NET_MONITOR_SIG_DIGEST} \
-      --plain-http
+  # Since the signature is not pushed by oras but by docker-nv2, there is no file name information about the signature.
+  # Therefore, we use oras to pull all related blobs, and then pick up the signature.
+  mkdir signature_cache
+  ORAS_CACHE=signature_cache oras pull --media-type application/vnd.cncf.notary.signature.v2+jwt \
+      --allow-empty-name \
+      --plain-http \
+      registry.wabbit-networks.io/net-monitor@sha256:${NET_MONITOR_SIG_DIGEST}
+  cp $(find signature_cache -type f ! -name ${NET_MONITOR_SIG_DIGEST}) net-monitor_v1.signature.jwt
+  rm -rf signature_cache
   ```
 - Validate the signature
   ```bash
