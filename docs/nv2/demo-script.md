@@ -43,9 +43,21 @@ Perform the following steps prior to the demo:
 
 If iterating through the demo, these are the steps required to reset to a clean state:
 
+CLEANUP
+```bash
+make
+make install-docker-plugins
+sudo cp bin/nv2 /usr/bin/nv2
+alias docker="docker nv2"
+```
+
 - Remove docker alias:
   ```bash
   unalias docker
+  ```
+- Add docker alias:
+  ```bash
+  alias docker nv2
   ```
 - Reset the local registry:
   ```bash
@@ -116,7 +128,6 @@ These specific steps are product/cloud specific, so we'll assume these steps hav
 Using the private key, we'll sign the `net-monitor:v1` image. Note, we're signing the image with a registry name that we haven't yet pushed to. This enables offline signing scenarios. This is important as the image will eventually be published on `registry.wabbit-networks.io/`, however their internal staging and promotion process may publish to internal registries before promotion to the public registry.
 
 - Generate an [nv2 signature][nv2-signature], persisted locally as `net-monitor_v1.signature.jwt`
-
   ```shell
   docker notary --enabled
 
@@ -129,9 +140,7 @@ Using the private key, we'll sign the `net-monitor:v1` image. Note, we're signin
   ```bash
   cat <output reference of docker notary sign>
   ```
-
 - Push the container image
-
   ```bash
   docker push registry.wabbit-networks.io/net-monitor:v1
   ```
@@ -149,13 +158,19 @@ echo '{"version": "0.0.0.0", "image": "registry.wabbit-networks.io/net-monitor:v
 ```bash
 oras push registry.wabbit-networks.io/net-monitor \
     --artifact-type application/example.sbom.v0 \
-    --artifact-reference registry.wabbit-networks.io/net-monitor@<net-monitor@sha256:digest> \
+    --artifact-reference registry.wabbit-networks.io/net-monitor:v1 \
     --export-manifest sbom_v1-manifest.json \
     --plain-http \
     ./sbom_v1.json
 
+oras discover --artifact-type application/example.sbom.v0 \
+      -v \
+      --plain-http \
+      registry.wabbit-networks.io/net-monitor:v1
+
+
 # view the manifest
-cat sbom_v1-manifest.json
+cat sbom_v1-manifest.json | jq
 ```
 
 ### Push the SBoM with Signing
@@ -166,10 +181,12 @@ cat sbom_v1-manifest.json
   nv2 sign -m x509 \
       -k ~/.ssh/wabbit-networks.key \
       -o net-monitor_v1-sbom.signature.jwt \
+      --push registry.wabbit-networks.io/net-monitor \
       file:sbom_v1-manifest.json
   
   # view the sbom signature
   cat net-monitor_v1-sbom.signature.jwt
+
 
   # Push the signature
   NET_MONITOR_SBOM_DIGEST=$(sha256sum sbom_v1-manifest.json | cut -d' ' -f1)
@@ -178,6 +195,11 @@ cat sbom_v1-manifest.json
       --artifact-reference registry.wabbit-networks.io/net-monitor@sha256:${NET_MONITOR_SBOM_DIGEST} \
       --plain-http \
       net-monitor_v1-sbom.signature.jwt:application/vnd.cncf.notary.signature.v2+jwt
+
+  oras discover --artifact-type application/vnd.cncf.notary.v2 \
+      -v \
+      --plain-http \
+      registry.wabbit-networks.io/net-monitor:v1
   ```
 
 ## Pulling Validated Content
@@ -203,9 +225,10 @@ Simulate a notary enabled client, which doesn't yet have the public keys configu
 - Get the digest for the `net-monitor:v1` image and query for Notary v2 linked artifacts
   ```bash
   oras discover --artifact-type application/vnd.cncf.notary.v2 \
+      -v \
       --plain-http \
       registry.wabbit-networks.io/net-monitor:v1
-  
+
   NET_MONITOR_DIGEST=<output digest of oras discover>
   NET_MONITOR_SIG_DIGEST=<output reference of oras discover>
   ```
@@ -251,6 +274,15 @@ Simulate a notary enabled client, which doesn't yet have the public keys configu
   ```bash
   docker pull $image
   ```
+
+## Pull SBoM
+
+```
+oras discover --artifact-type application/vnd.cncf.notary.v2 \
+      -v \
+      --plain-http \
+      registry.wabbit-networks.io/net-monitor:v1
+```
 
 [docker-generate]:        https://github.com/shizhMSFT/docker-generate
 [nv2-signature]:          ../signature/README.md
