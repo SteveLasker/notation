@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/notaryproject/notation-go-lib"
+	"github.com/notaryproject/notation-go"
 	"github.com/notaryproject/notation/internal/cmd"
 	"github.com/notaryproject/notation/internal/osutil"
 	"github.com/notaryproject/notation/pkg/config"
@@ -67,8 +67,7 @@ func runSign(ctx *cli.Context) error {
 		return err
 	}
 
-	if ctx.Bool("push") {
-		ref := ctx.String("push-reference")
+	if ref := ctx.String("push-reference"); ctx.Bool("push") && !(ctx.Bool(flagLocal.Name) && ref == "") {
 		if ref == "" {
 			ref = ctx.Args().First()
 		}
